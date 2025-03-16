@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Grammar Learning Game</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+      background: #fff;
+    }
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #gameCanvas {
+      display: block;
+      background: #fff;
+    }
+    #instruction {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px 20px;
+      border-radius: 5px;
+      z-index: 2;
+      font-size: 18px;
+    }
+    #rewardOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 3;
+      color: #fff;
+      font-size: 36px;
+    }
+    #rewardOverlay button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="instruction">Level 1: Place the ball on top of the table</div>
+    <div id="rewardOverlay">
+      <div>Congratulations!</div>
+      <button id="nextLevelBtn">Next Level</button>
+    </div>
+  </div>
+
+  <!-- Audio elements for celebration and error sounds -->
+  <audio id="celebrationSound" src="https://cdn.pixabay.com/download/audio/2021/10/22/audio_e7072f5ea1.mp3?filename=pop-157675.mp3"></audio>
+  <audio id="errorSound" src="https://assets.mixkit.co/sfx/download/mixkit-wrong-answer-fail-notification-946.mp3"></audio>
+
+  <!-- Matter.js library from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script>
+    // Module aliases for Matter.js
+    const Engine = Matter.Engine,
+          Render = Matter.Render,
+          World = Matter.World,
+          Bodies = Matter.Bodies,
+          Body = Matter.Body,
+          Mouse = Matter.Mouse,
+          MouseConstraint = Matter.MouseConstraint,
+          Events = Matter.Events;
+
+    let engine, world, render;
+    let currentLevel = 0;
+    let levels = [];
+    let objects = [];
+    let table, ball, secondBall, avatar;
+    const canvas = document.getElementById('gameCanvas');
+    const instructionDiv = document.getElementById('instruction');
+    const rewardOverlay = document.getElementById('rewardOverlay');
+    const nextLevelBtn = document.getElementById('nextLevelBtn');
+    const celebrationSound = document.getElementById('celebrationSound');
+    const errorSound = document.getElementById('errorSound');
+
+    // Resize canvas to full window
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if(render) {
+        render.options.width = window.innerWidth;
+        render.options.height = window.innerHeight;
+      }
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Create Matter.js engine and world
+    engine = Engine.create();
+    world = engine.world;
+    
+    // Create renderer
+    render = Render.create({
+      canvas: canvas,
+      engine: engine,
+      options: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        wireframes: false,
+        background: "#e0f7fa"
+      }
+    });
+
+    // Create an invisible ground (boundary)
+    const ground = Bodies.rectangle(window.innerWidth/2, window.innerHeight + 50, window.innerWidth, 100, { 
+      isStatic: true,
+      render: { visible: false }
+    });
+    World.add(world, ground);
+
+    // Setup mouse constraint for drag and drop
+    const mouse = Mouse.create(render.canvas);
+    const mouseConstraint = MouseConstraint.create(engine, {
+      mouse: mouse,
+      constraint: {
+        stiffness: 0.2,
+        render: { visible: false }
+      }
+    });
+    World.add(world, mouseConstraint);
+    render.mouse = mouse;
+
+    // -------------------------------
+    // Level Definitions
+    // -------------------------------
+    levels = [
+      {
+        instruction: "Level 4: Place the ball inside the box",
+        setup: function() {
+          clearWorld();
+          // Create a box (target area) using a static rectangle.
+          const box = Bodies.rectangle(window.innerWidth/2, window.innerHeight - 150, 100, 100, {
+            isStatic: true,
+            render: { fillStyle: '#4CAF50' }
+          });
+          // Create a ball to be dragged into the box
+          ball = Bodies.circle(window.innerWidth/2, 100, 20, {
+            restitution: 0.5,
+            render: { fillStyle: '#F44336' }
+          });
+          World.add(world, [box, ball]);
+          objects = [ball, box];
+          this.target = box;  // Save target for later checking
+        },
+        check: function() {
+          // Check if ball is inside the box boundaries
+          const box = this.target;
+          if (ball.position.x > box.position.x - 50 &&
+              ball.position.x < box.position.x + 50 &&
+              ball.position.y > box.position.y - 50 &&
+              ball.position.y < box.position.y + 50) {
+            return true;
+          }
+          return false;
+        }
+      },
+      {
+        instruction: "Level 6: Give the big ball to the avatar",
+        setup: function() {
+          clearWorld();
+          // Create an avatar placeholder using a static rectangle with a sprite image.
+          // (Replace the URL below with any Flaticon or custom image as needed.)
+          avatar = Bodies.rectangle(window.innerWidth/2, window.innerHeight-200, 100, 100, {
+            isStatic: true,
+            render: { 
+              sprite: { 
+                texture: 'https://images2.drct2u.com/pdp_main_tablet_x2/products/tl/tl325/a01tl325510s.jpg',
+                xScale: 100 / 512,
+                yScale: 100 / 512
+              }
+            }
+          });
+          // Create a big ball (the one to be delivered)
+          ball = Bodies.circle(150, window.innerHeight/2, 30, {
+            restitution: 0.5,
+            render: { fillStyle: '#F44336' }
+          });
+          // Create a small ball as a distraction
+          secondBall = Bodies.circle(150, window.innerHeight/2 - 100, 15, {
+            restitution: 0.5,
+            render: { fillStyle: '#2196F3' }
+          });
+          World.add(world, [avatar, ball, secondBall]);
+          objects = [avatar, ball, secondBall];
+        },
+        check: function() {
+          // Define the boundaries for the avatar
+          const avatarLeft = avatar.position.x - 50;
+          const avatarRight = avatar.position.x + 50;
+          const avatarTop = avatar.position.y - 50;
+          const avatarBottom = avatar.position.y + 50;
+          // Check if the big ball (ball) is delivered to the avatar
+          if (ball.position.x > avatarLeft && ball.position.x < avatarRight &&
+              ball.position.y > avatarTop && ball.position.y < avatarBottom) {
+            return true;
+          }
+          // If the small ball is delivered instead, play error sound and reset its position.
+          if (secondBall.position.x > avatarLeft && secondBall.position.x < avatarRight &&
+              secondBall.position.y > avatarTop && secondBall.position.y < avatarBottom) {
+            errorSound.play();
+            Body.setPosition(secondBall, { x: 150, y: window.innerHeight/2 - 100 });
+          }
+          return false;
+        }
+      }
+    ];
+
+    // -------------------------------
+    // Utility Functions
+    // -------------------------------
+    // Remove all bodies (except ground and mouse constraint) from the world.
+    function clearWorld() {
+        World.clear(world, false);
+
+        const wallThickness = 100; // Large enough to prevent objects from escaping
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // Define static boundaries
+        const leftWall = Bodies.rectangle(-wallThickness / 2, height / 2, wallThickness, height * 2, { isStatic: true });
+        const rightWall = Bodies.rectangle(width + wallThickness / 2, height / 2, wallThickness, height * 2, { isStatic: true });
+        const topWall = Bodies.rectangle(width / 2, -wallThickness / 2, width * 2, wallThickness, { isStatic: true });
+        const ground = Bodies.rectangle(width / 2, height + wallThickness / 2, width * 2, wallThickness, { isStatic: true });
+
+        // Add walls to the world
+        World.add(world, [leftWall, rightWall, topWall, ground]);
+        World.add(world, mouseConstraint);
+    }
+
+    // Start a given level by index
+    function startLevel(levelIndex) {
+      currentLevel = levelIndex;
+      if (currentLevel >= levels.length) {
+        instructionDiv.innerText = "Congratulations! You've completed all levels!";
+        return;
+      }
+      let level = levels[currentLevel];
+      instructionDiv.innerText = level.instruction;
+      level.setup();
+    }
+
+    // Show reward overlay with celebration sound when level is complete.
+    function showRewardScreen() {
+      celebrationSound.play();
+      rewardOverlay.style.display = "flex";
+    }
+
+    nextLevelBtn.addEventListener('click', function() {
+      rewardOverlay.style.display = "none";
+      startLevel(currentLevel + 1);
+    });
+
+    // Check for level completion on every engine update
+    Events.on(engine, 'afterUpdate', function() {
+      if (currentLevel < levels.length) {
+        let level = levels[currentLevel];
+        if (level.check()) {
+          showRewardScreen();
+        }
+      }
+    });
+
+    // -------------------------------
+    // Start the Game
+    // -------------------------------
+    Engine.run(engine);
+    Render.run(render);
+    resizeCanvas();
+    startLevel(0);
+  </script>
+</body>
+</html>
